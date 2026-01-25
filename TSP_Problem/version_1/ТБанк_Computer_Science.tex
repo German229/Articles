@@ -1,0 +1,399 @@
+\documentclass[a4paper,12pt]{article}
+
+% --- Кодировка и язык ---
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+
+% --- Математика и теоремы ---
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+
+% --- Оформление ---
+\usepackage{geometry}
+\geometry{margin=2.2cm}
+\usepackage{setspace}
+\onehalfspacing
+
+% --- Списки, таблицы, алгоритмы ---
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% --- Графика и ссылки ---
+\usepackage{graphicx}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=blue,
+  urlcolor=blue
+}
+
+% --- Удобные макросы ---
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Определение}
+\newtheorem{proposition}{Утверждение}
+\newtheorem{remark}{Замечание}
+
+\title{Задача коммивояжёра и маршрутирование с поворотными штрафами:\\
+теоретический обзор, постановка и подход к сведению к ATSP/QTSP}
+\author{Голод Герман\\
+НИЯУ МИФИ}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Введение}
+
+\subsection{Актуальность}
+Задача коммивояжёра (Traveling Salesman Problem, TSP) является базовой моделью комбинаторной оптимизации и теоретической информатики: она демонстрирует типичную структуру NP-трудных задач, стимулирует развитие методов целочисленного программирования, эвристик и метаэвристик, а также служит испытательным полигоном для алгоритмических идей (кандидатные множества, локальный поиск, разрежение графов, гибридные процедуры) \cite{garey_johnson_1979,lawler1985,applegate2006,rego2011}.
+
+В прикладных задачах маршрутизации по улично-дорожной сети (логистика, робототехника, беспилотники) существенную роль играют \emph{повороты} (задержки на перекрёстках, ограничения по радиусу поворота, штрафы за манёвры). Классическая постановка TSP учитывает лишь стоимость перехода между двумя последовательными вершинами, тогда как стоимость реального движения часто зависит от \emph{тройки} последовательных вершин (или пары последовательных рёбер): «куда вошли в вершину» и «куда вышли» \cite{stanek2019,fischer2014}.
+
+\subsection{Обзор литературы}
+\textbf{Классическая TSP и точные методы.}
+Классические результаты включают динамическое программирование Беллмана и подход Хелда--Карпа \cite{bellman1962,heldkarp1962}. NP-полнота евклидовой TSP показана Пападимитриу \cite{papadimitriou1977}, общий аппарат NP-полноты систематизирован в книге Гарея--Джонсона \cite{garey_johnson_1979}. Для метрической TSP известен алгоритм Христофидеса с аппроксимационным отношением $3/2$ \cite{christofides1976}. Для евклидовой TSP существует PTAS (в фиксированной размерности) \cite{arora1998,mitchell1999}.
+
+\textbf{Практически эффективные эвристики и «state-of-the-art».}
+Лин--Керниган и особенно его эффективная реализация ЛКХ (LKH) стали «золотым стандартом» для больших инстансов \cite{helsgaun2000,rego2011}. Сильный вклад внесён в инженерные решения и вычислительное исследование TSP/Concorde \cite{applegate2006}. Для экстремально больших размеров важны методы разрежения/кандидатных рёбер и ускорения: POPMUSIC и построение хороших кандидатных списков \cite{taillard2019}, а также линейлогарифмическая эвристика Таилларда \cite{taillard2022}. Отдельные направления демонстрируют масштабирование на миллионы узлов в ограниченное время (Santa Claus Challenge) \cite{mariescu2021}.
+
+\textbf{Вариации с поворотными/квадратичными стоимостями.}
+Модели, где стоимость зависит от пары последовательных рёбер (или тройки вершин), естественно приводят к \emph{квадратичной} структуре цели и к постановкам QTSP и близким (включая угловые версии) \cite{fischer2014,stanek2019}. Для таких моделей важно уметь:
+(i) корректно сформулировать задачу (как QTSP/AngleTSP),
+(ii) сводить её к (A)TSP или MILP,
+(iii) применять зрелые решатели/эвристики (LKH, branch-and-cut) на трансформированной модели.
+
+\subsection{Формулировка темы}
+Тема работы: \emph{теоретический анализ классической задачи коммивояжёра и разработка теоретического подхода к вариации маршрутизации на графе с поворотными штрафами, включая корректную постановку как QTSP/ATSP и обсуждение алгоритмических схем (редукции, MILP, эвристики) на уровне идеи.}
+
+\subsection{Аннотация}
+В работе дан систематизированный теоретический обзор TSP: постановки, вычислительная сложность, аппроксимации и наиболее практично значимые семейства алгоритмов. Далее формализована вариация маршрутизации с поворотными штрафами как задача с зависимостью стоимости от тройки последовательных вершин, связанная с QTSP и угловыми модификациями. Предложен теоретический путь доведения вариации «граф с поворотами» до уровня научной постановки: (1) корректная математическая модель, (2) два взаимодополняющих направления решения --- MILP/branch-and-cut и редукции к ATSP с использованием зрелых эвристик (LKH/кандидатные множества), (3) анализ вычислительной сложности, ограничений и ожидаемого поведения на больших размерах.
+
+\subsection{Ключевые слова}
+Задача коммивояжёра; TSP; ATSP; QTSP; локальный поиск; Lin--Kernighan; LKH; POPMUSIC; поворотные штрафы; угловая TSP; целочисленное программирование; редукции.
+
+\subsection{Методы исследования}
+Используются:
+\begin{itemize}[leftmargin=2em]
+  \item формализация задач и доказательные рассуждения (связь моделей, редукции);
+  \item анализ вычислительной сложности (асимптотика, NP-трудность);
+  \item обзор и сравнительный анализ алгоритмических семейств (точные методы, аппроксимации, эвристики);
+  \item построение теоретической схемы решения варианта с поворотами: MILP-модель с тройками и редукция к ATSP/QTSP-подходам.
+\end{itemize}
+
+\section{Основная часть}
+
+\subsection{Главные мысли и предложение решения проблемы}
+
+\subsubsection{1. Классическая постановка TSP и базовые классы}
+\begin{definition}[Симметричная TSP (STSP)]
+Дан полный неориентированный граф $G=(V,E)$, $|V|=n$, и функция стоимости $c:E\to \R_{\ge 0}$.
+Требуется найти гамильтонов цикл минимальной стоимости:
+\[
+\min_{\tau \in \mathcal{H}(V)} \sum_{\{i,j\}\in \tau} c_{ij},
+\]
+где $\mathcal{H}(V)$ --- множество гамильтоновых циклов на $V$.
+\end{definition}
+
+\begin{definition}[Асимметричная TSP (ATSP)]
+Дан полный ориентированный граф на $V$ и стоимости дуг $c_{ij}$.
+Найти ориентированный гамильтонов цикл минимальной стоимости:
+\[
+\min_{\tau \in \mathcal{H}^{\rightarrow}(V)} \sum_{(i,j)\in \tau} c_{ij}.
+\]
+\end{definition}
+
+\begin{definition}[Метрическая TSP]
+Говорят, что STSP метрична, если стоимости удовлетворяют неравенству треугольника:
+$c_{ik}\le c_{ij}+c_{jk}$ для всех $i,j,k$.
+\end{definition}
+
+\textbf{Комментарий.}
+Метрический случай важен для аппроксимаций (например, алгоритм Христофидеса \cite{christofides1976}).
+Для евклидовой TSP (точки в $\R^d$ и $c_{ij}=\|x_i-x_j\|$) известны PTAS \cite{arora1998,mitchell1999}.
+
+\subsubsection{2. NP-трудность и границы применимости точных методов}
+\begin{proposition}[NP-трудность]
+Классическая TSP NP-трудна, а евклидова TSP NP-полна \cite{garey_johnson_1979,papadimitriou1977}.
+\end{proposition}
+
+\textbf{Следствие для практики.}
+Для больших $n$ точные методы (DP \cite{bellman1962,heldkarp1962}, branch-and-cut) становятся применимы лишь при сильной структуре/разрежении и мощной инженерии \cite{applegate2006}. Поэтому основная практическая линия на масштабах $10^4$--$10^6+$ опирается на эвристики (LK/LKH, кандидаты, локальные улучшения, разрежение) \cite{helsgaun2000,rego2011,taillard2019,taillard2022,mariescu2021}.
+
+\subsubsection{3. Современная «практическая теорема»: почему работает LKH}
+Семейство Lin--Kernighan решает задачу через последовательность \emph{$k$-opt} перестроек тура, выбирая перспективные замены ребер. Ключевой технологический компонент --- \emph{кандидатные множества рёбер}: вместо полного $O(n^2)$ перебора рассматривается малое число «хороших» соседей для каждой вершины \cite{helsgaun2000,rego2011}. Эффективность LKH основана на:
+\begin{itemize}[leftmargin=2em]
+  \item качественных кандидатных множествах (альфа-меры, POPMUSIC и родственные подходы) \cite{helsgaun2000,taillard2019};
+  \item агрессивных локальных улучшениях и аккуратной организации поиска;
+  \item высокой повторяемости и комбинировании решений, что важно на больших $n$ \cite{rego2011,taillard2022,mariescu2021}.
+\end{itemize}
+
+\subsubsection{4. Постановка вариации: TSP на графе с поворотными штрафами}
+Рассмотрим модель, в которой переходная стоимость зависит от \emph{двух последовательных перемещений}. Это естественно для дорожных сетей: стоимость «поворота» проявляется в вершине при смене направления.
+
+\begin{definition}[Turn-TSP (стоимость по тройкам вершин)]
+Пусть задан ориентированный или неориентированный граф движения $G=(V,E)$ и функция базовой стоимости рёбер $d:E\to \R_{\ge 0}$.
+Пусть также задана функция штрафа за поворот
+\[
+p: V\times V\times V \to \R_{\ge 0}, \qquad p(i,j,k) \ \text{определяет штраф при переходе}\ i\to j\to k.
+\]
+Требуется найти гамильтонов цикл $\tau=(v_1,\dots,v_n,v_1)$, минимизирующий
+\[
+\min_{\tau} \left(
+\sum_{t=1}^{n} d(v_t,v_{t+1})\;+\;\lambda \sum_{t=1}^{n} p(v_{t-1},v_t,v_{t+1})
+\right),
+\]
+где индексы по модулю $n$, а $\lambda\ge 0$ --- коэффициент важности поворотов.
+\end{definition}
+
+\begin{remark}
+Если $p\equiv 0$, получаем классическую TSP. Следовательно, Turn-TSP не проще TSP и как минимум NP-трудна.
+\end{remark}
+
+\textbf{Связь с QTSP.}
+Такая цель имеет квадратичную/второго порядка структуру по последовательным рёбрам и естественно относится к классу QTSP и смежных постановок \cite{fischer2014}. Угловая версия (AngleTSP), где $p(i,j,k)$ соответствует углу поворота в вершине $j$, исследована как геометрическая вариация \cite{stanek2019}.
+
+\subsubsection{5. Научно корректное доведение вариации до «решаемой» модели}
+
+Далее предлагается теоретическая схема, которую можно развивать до полноценной научной статьи (и впоследствии --- до экспериментального исследования).
+
+\paragraph{5.1. MILP-модель с переменными для троек}
+Введём бинарные переменные:
+\[
+x_{ij}\in\{0,1\} \quad \text{(дуга/ребро $i\to j$ включено в тур)},\qquad
+z_{ijk}\in\{0,1\} \quad \text{(в туре встречается фрагмент $i\to j\to k$)}.
+\]
+
+\textbf{Базовые ограничения тура (ATSP-стиль).}
+\begin{align}
+&\sum_{j\ne i} x_{ij} = 1,\quad \forall i\in V \qquad \text{(ровно один выход)},\\
+&\sum_{j\ne i} x_{ji} = 1,\quad \forall i\in V \qquad \text{(ровно один вход)},\\
+&\text{(ограничения против подтуров, например MTZ или cut'ы)}.
+\end{align}
+
+\textbf{Связь $z$ с $x$.}
+Для всех различных $i,j,k$:
+\begin{align}
+&z_{ijk} \le x_{ij},\\
+&z_{ijk} \le x_{jk},\\
+&z_{ijk} \ge x_{ij}+x_{jk}-1.
+\end{align}
+
+\textbf{Целевая функция.}
+\[
+\min \sum_{i\ne j} d_{ij} x_{ij} + \lambda \sum_{i,j,k} p_{ijk}\, z_{ijk}.
+\]
+
+\textbf{Комментарий по научной новизне.}
+Данная MILP-постановка сама по себе известна как стандартный путь линеаризации «стоимостей по тройкам». Научно значимое развитие здесь --- выбор:
+\begin{itemize}[leftmargin=2em]
+  \item класса ограничений (cutting planes) и нижних оценок;
+  \item специальных структур $p_{ijk}$ (например, угловая геометрическая структура) \cite{stanek2019};
+  \item схемы разрежения и построения кандидатов, чтобы уйти от полного $O(n^3)$ по тройкам.
+\end{itemize}
+
+\paragraph{5.2. Редукция Turn-TSP к QTSP/ATSP и использование зрелых эвристик}
+Литература по QTSP демонстрирует, что квадратичная структура может быть сведена к классическим постановкам через полиномиальные преобразования и далее решаться стандартным ПО \cite{fischer2014}. Для практической линии (когда нужен масштаб) целесообразна архитектура:
+
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{Упорядочивание модели:} фиксировать $p(i,j,k)$ как локальную функцию поворота (угол/категория манёвра), допускающую быстрый доступ.
+  \item \textbf{Разрежение:} строить для каждого $j$ кандидатные множества выходов $k\in Cand(j)$ и входов $i\in Cand^{-}(j)$, чтобы число потенциальных троек $(i,j,k)$ стало управляемым. Здесь применимы идеи кандидатных рёбер, POPMUSIC и ускоренного построения хороших ребёр \cite{helsgaun2000,taillard2019,taillard2022}.
+  \item \textbf{Эвристика на редуцированном пространстве:} применить локальный поиск уровня LK/LKH на расширенном представлении (где «состояние» учитывает входящее ребро) либо использовать QTSP-ориентированные эвристики и матэвристики (подзадачи оптимизируются точно) \cite{fischer2014,stanek2019}.
+\end{enumerate}
+
+\paragraph{5.3. Концептуальная схема «расширения состояния» (edge-based state space)}
+Интуитивно поворотная стоимость делает задачу \emph{второго порядка}: стоимость следующего шага зависит от предыдущего. Стандартный трюк в оптимизации на графах --- расширить пространство состояний.
+
+\begin{definition}[Граф состояний по ориентированным рёбрам]
+Пусть базовый граф движения имеет ориентированные дуги $(u\to v)$.
+Введём состояние $s=(u\to v)$ как «мы приехали в $v$ из $u$».
+Переход $s=(u\to v)\to s'=(v\to w)$ имеет стоимость $d_{vw}+\lambda p(u,v,w)$.
+\end{definition}
+
+Далее задача выбора тура превращается в задачу выбора цикла по состояниям с дополнительными ограничениями «посетить каждую вершину ровно один раз» (это приводит к постановкам семейства generalized TSP / ATSP на трансформированном графе). На уровне научной статьи здесь важно:
+\begin{itemize}[leftmargin=2em]
+  \item строго описать преобразование и доказать эквивалентность;
+  \item оценить рост размерности после преобразования;
+  \item выделить условия, при которых разрежение кандидатов делает подход вычислимо осуществимым.
+\end{itemize}
+
+\subsubsection{6. Теоретические оценки сложности и ожидаемое поведение}
+\textbf{Базовая трудность.}
+Turn-TSP NP-трудна уже потому, что включает TSP как частный случай ($p\equiv 0$).
+
+\textbf{Размерность моделей.}
+\begin{itemize}[leftmargin=2em]
+  \item MILP с $x_{ij}$ имеет $O(n^2)$ переменных, а с тройками $z_{ijk}$ --- $O(n^3)$ в худшем случае, что требует разрежения.
+  \item Расширение состояния по ориентированным рёбрам даёт число состояний порядка $O(|E|)$ (или $O(n^2)$ для полного графа), что может быть приемлемо только при сильном разрежении.
+\end{itemize}
+
+\textbf{Почему разрежение принципиально.}
+Классические LKH/POPMUSIC идеи демонстрируют, что качество решения в значительной мере определяется качеством небольшого набора кандидатов \cite{helsgaun2000,taillard2019,taillard2022}. Поэтому «научно корректная» стратегия для Turn-TSP на больших $n$ --- построить кандидаты так, чтобы:
+\[
+\forall j:\ |Cand(j)| = O(\log n)\ \text{или константа, при сохранении качества тура.}
+\]
+Это переводит число учитываемых троек к $O(n\cdot |Cand^{-}(j)|\cdot |Cand(j)|)$, что становится практически приемлемым.
+
+\subsubsection{7. Алгоритмическая схема (уровень идеи)}
+Ниже приведена схема, которую можно развить до реализации и экспериментальной части (при необходимости).
+
+\begin{algorithm}[H]
+\caption{Turn-TSP на основе разрежения и локального поиска (идея)}
+\begin{algpseudocode}[1]
+\Require множество вершин $V$, базовые стоимости $d_{ij}$, штрафы $p_{ijk}$, параметр $\lambda$
+\Ensure тур $\tau$
+\State Построить кандидатные множества $Cand(j)$ (например, по $d_{ij}$ и/или по эвристике построения «хороших рёбер»)
+\State Инициализировать тур $\tau_0$ (например, жадный nearest neighbor на $d_{ij}$, затем улучшить 2-opt по $d_{ij}$)
+\State Определить функцию стоимости тура $F(\tau)=\sum d+\lambda \sum p$ по тройкам
+\Repeat
+  \State Выполнить локальное улучшение тура (обобщение $k$-opt), рассматривая перестройки, затрагивающие только рёбра из кандидатов
+  \State Принять улучшение, если $F(\tau)$ уменьшилась
+\Until{нет улучшений или достигнут лимит}
+\State \Return $\tau$
+\end{algpseudocode}
+\end{algorithm}
+
+\textbf{Что делает это «научным».}
+Чтобы довести до уровня научной статьи, нужны:
+\begin{itemize}[leftmargin=2em]
+  \item строгое определение кандидатов и доказуемые/эмпирические аргументы, почему качество не деградирует слишком сильно;
+  \item формальный анализ трудоёмкости одного шага локального поиска;
+  \item сравнение с базовыми подходами: (i) MILP на малых $n$, (ii) эвристика без поворотных штрафов, (iii) специализированные QTSP/AngleTSP эвристики \cite{fischer2014,stanek2019}.
+\end{itemize}
+
+\subsubsection{8. Плюсы и минусы предложенного подхода}
+\textbf{Плюсы:}
+\begin{itemize}[leftmargin=2em]
+  \item корректная математическая постановка (Turn-TSP как QTSP-подобная задача) \cite{fischer2014};
+  \item совместимость с богатой экосистемой TSP-алгоритмов (LK/LKH, разрежение, кандидаты) \cite{helsgaun2000,rego2011,taillard2019,taillard2022};
+  \item естественная интерпретация для транспортных сетей и робототехники (штрафы за манёвр).
+\end{itemize}
+
+\textbf{Минусы/риски:}
+\begin{itemize}[leftmargin=2em]
+  \item рост размерности при учёте троек (теоретически $O(n^3)$);
+  \item необходимость аккуратно строить кандидаты и вычислять $p_{ijk}$;
+  \item возможная асимметрия и «неметричность» стоимости, что осложняет аппроксимационные гарантии.
+\end{itemize}
+
+\section{Завершение}
+
+\subsection{Выводы}
+\begin{enumerate}[leftmargin=2em]
+  \item TSP остаётся центральной задачей комбинаторной оптимизации; теоретические результаты (NP-полнота, аппроксимации, PTAS для евклидова случая) формируют границы применимости \cite{garey_johnson_1979,papadimitriou1977,christofides1976,arora1998,mitchell1999}.
+  \item Практическая эффективность на больших размерах обеспечивается эвристиками семейства Lin--Kernighan и инженерными приёмами разрежения/кандидатов \cite{helsgaun2000,rego2011,taillard2019,taillard2022,mariescu2021}.
+  \item Вариация «граф с поворотами» естественно формализуется как задача со стоимостью по тройкам вершин и связана с QTSP/AngleTSP \cite{fischer2014,stanek2019}. Это позволяет строго обосновать NP-трудность и корректно выбрать инструментарий.
+  \item Предложен теоретический путь доведения до научного уровня: (i) MILP-модель с линеаризацией троек, (ii) редукции/расширение состояния и применение зрелых эвристик с разрежением, (iii) анализ сложности и рисков.
+\end{enumerate}
+
+\subsection{Список литературы}
+\begin{thebibliography}{99}
+
+\bibitem{bellman1962}
+R.~Bellman.
+\newblock Dynamic programming treatment of the travelling salesman problem.
+\newblock \emph{Journal of the ACM}, 9(1):61--63, 1962.
+
+\bibitem{heldkarp1962}
+M.~Held and R.~M. Karp.
+\newblock A dynamic programming approach to sequencing problems.
+\newblock \emph{Journal of the Society for Industrial and Applied Mathematics}, 10(1):196--210, 1962.
+
+\bibitem{garey_johnson_1979}
+M.~R. Garey and D.~S. Johnson.
+\newblock \emph{Computers and Intractability: A Guide to the Theory of NP-Completeness}.
+\newblock W.\ H.\ Freeman, 1979.
+
+\bibitem{papadimitriou1977}
+C.~H. Papadimitriou.
+\newblock The Euclidean travelling salesman problem is NP-complete.
+\newblock \emph{Theoretical Computer Science}, 4(3):237--244, 1977.
+
+\bibitem{christofides1976}
+N.~Christofides.
+\newblock Worst-case analysis of a new heuristic for the travelling salesman problem.
+\newblock Technical Report 388, Graduate School of Industrial Administration, Carnegie Mellon University, 1976.
+
+\bibitem{arora1998}
+S.~Arora.
+\newblock Polynomial time approximation schemes for Euclidean traveling salesman and other geometric problems.
+\newblock \emph{Journal of the ACM}, 45(5):753--782, 1998.
+\newblock DOI: \href{https://doi.org/10.1145/290179.290180}{10.1145/290179.290180}.
+
+\bibitem{mitchell1999}
+J.~S.~B. Mitchell.
+\newblock Guillotine subdivisions approximate polygonal subdivisions: A simple polynomial-time approximation scheme for geometric TSP, $k$-MST, and related problems.
+\newblock \emph{SIAM Journal on Computing}, 28(4):1298--1309, 1999.
+\newblock DOI: \href{https://doi.org/10.1137/S0097539796309764}{10.1137/S0097539796309764}.
+
+\bibitem{lawler1985}
+E.~L. Lawler, J.~K. Lenstra, A.~H.~G. Rinnooy Kan, and D.~B. Shmoys (eds.).
+\newblock \emph{The Traveling Salesman Problem: A Guided Tour of Combinatorial Optimization}.
+\newblock Wiley, 1985.
+
+\bibitem{applegate2006}
+D.~L. Applegate, R.~E. Bixby, V.~Chv{\'a}tal, and W.~J. Cook.
+\newblock \emph{The Traveling Salesman Problem: A Computational Study}.
+\newblock Princeton University Press, 2006.
+
+\bibitem{helsgaun2000}
+K.~Helsgaun.
+\newblock An effective implementation of the Lin--Kernighan traveling salesman heuristic.
+\newblock \emph{European Journal of Operational Research}, 126(1):106--130, 2000.
+
+\bibitem{rego2011}
+C.~Rego, D.~Gamboa, F.~Glover, and C.~Osterman.
+\newblock Traveling salesman problem heuristics: Leading methods, implementations and latest advances.
+\newblock \emph{European Journal of Operational Research}, 211(3):427--441, 2011.
+
+\bibitem{taillard2019}
+{\'E}.~D. Taillard and K.~Helsgaun.
+\newblock POPMUSIC for the travelling salesman problem.
+\newblock \emph{European Journal of Operational Research}, 272(2):420--429, 2019.
+\newblock DOI: \href{https://doi.org/10.1016/j.ejor.2018.06.039}{10.1016/j.ejor.2018.06.039}.
+
+\bibitem{taillard2022}
+{\'E}.~D. Taillard.
+\newblock A linearithmic heuristic for the travelling salesman problem.
+\newblock \emph{European Journal of Operational Research}, 297(2):442--450, 2022.
+\newblock DOI: \href{https://doi.org/10.1016/j.ejor.2021.05.034}{10.1016/j.ejor.2021.05.034}.
+
+\bibitem{skinderowicz2022}
+R.~Skinderowicz.
+\newblock Improving Ant Colony Optimization efficiency for solving large TSP instances.
+\newblock \emph{Applied Soft Computing}, 120:108653, 2022.
+\newblock DOI: \href{https://doi.org/10.1016/j.asoc.2022.108653}{10.1016/j.asoc.2022.108653}.
+
+\bibitem{mariescu2021}
+R.~Mariescu-Istodor and P.~Fr{\"a}nti.
+\newblock Solving the Large-Scale TSP Problem in 1 h: Santa Claus Challenge 2020.
+\newblock \emph{Frontiers in Robotics and AI}, 8:689908, 2021.
+\newblock DOI: \href{https://doi.org/10.3389/frobt.2021.689908}{10.3389/frobt.2021.689908}.
+
+\bibitem{fischer2014}
+A.~Fischer, F.~Fischer, G.~J{\"a}ger, J.~Keilwagen, P.~Molitor, and I.~Grosse.
+\newblock Exact algorithms and heuristics for the Quadratic Traveling Salesman Problem with an application in bioinformatics.
+\newblock \emph{Discrete Applied Mathematics}, 166:97--114, 2014.
+\newblock DOI: \href{https://doi.org/10.1016/j.dam.2013.09.011}{10.1016/j.dam.2013.09.011}.
+
+\bibitem{stanek2019}
+R.~Stan{\v e}k, P.~Greistorfer, K.~Ladner, and U.~Pferschy.
+\newblock Geometric and LP-based heuristics for angular travelling salesman problems in the plane.
+\newblock \emph{Computers \& Operations Research}, 108:97--111, 2019.
+\newblock DOI: \href{https://doi.org/10.1016/j.cor.2019.01.016}{10.1016/j.cor.2019.01.016}.
+
+\bibitem{ortools_cite}
+Google OR-Tools.
+\newblock How to cite OR-Tools and its solvers (routing library).
+\newblock \emph{Developers documentation}, accessed 2025.
+\newblock URL: \href{https://developers.google.com/optimization/support/cite}{developers.google.com/optimization/support/cite}.
+
+\end{thebibliography}
+
+\end{document}

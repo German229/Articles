@@ -1,0 +1,65 @@
+############################
+# LaTeX build artifacts
+############################
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+*.xdv
+*.idx
+*.ilg
+*.ind
+
+############################
+# PDF intermediates (not final PDF)
+############################
+*-eps-converted-to.pdf
+
+############################
+# Editors / IDEs
+############################
+.idea/
+.vscode/
+*.swp
+*.swo
+
+############################
+# macOS
+############################
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+############################
+# Windows
+############################
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+############################
+# Temporary / backup files
+############################
+*.tmp
+*.bak
+*.old
+*~
+
+############################
+# Explicitly keep
+############################
+!*.tex
+!*.pdf
